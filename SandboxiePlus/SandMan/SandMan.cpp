@@ -26,14 +26,16 @@
 #include "../MiscHelpers/Common/OtherFunctions.h"
 #include "../MiscHelpers/Common/Common.h"
 #include "Windows/SupportDialog.h"
+#include "../MiscHelpers/Archive/Archive.h"
+#include "../MiscHelpers/Archive/ArchiveFS.h"
 #include "Views/FileView.h"
 #include "OnlineUpdater.h"
 #include "../MiscHelpers/Common/NeonEffect.h"
 #include <QVariantAnimation>
+#include <QSessionManager>
 
 CSbiePlusAPI* theAPI = NULL;
 
-#if defined(Q_OS_WIN)
 #include <wtypes.h>
 #include <QAbstractNativeEventFilter>
 #include <dbt.h>
@@ -41,7 +43,11 @@ CSbiePlusAPI* theAPI = NULL;
 class CNativeEventFilter : public QAbstractNativeEventFilter
 {
 public:
-	virtual bool nativeEventFilter(const QByteArray &eventType, void *message, long *result)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    virtual bool nativeEventFilter(const QByteArray &eventType, void *message, qintptr *result)
+#else
+    virtual bool nativeEventFilter(const QByteArray &eventType, void *message, long *result)
+#endif
 	{
 		if (eventType == "windows_generic_MSG" || eventType == "windows_dispatcher_MSG")
 		{
@@ -75,10 +81,16 @@ public:
 				{
 				}*/
 			}
-			else if (msg->message == WM_DWMCOLORIZATIONCOLORCHANGED)
+			else if (msg->message == WM_SETTINGCHANGE)
 			{
 				if (theGUI && theConf->GetInt("Options/UseDarkTheme", 2) == 2)
 					theGUI->UpdateTheme();
+			}
+			else if (msg->message == WM_SHOWWINDOW && msg->wParam)
+			{
+				QWidget* pWidget = QWidget::find((WId)msg->hwnd);
+				if (theGUI && pWidget && (pWidget->windowType() | Qt::Dialog) == Qt::Dialog)
+					theGUI->UpdateTitleTheme(msg->hwnd);
 			}
 		}
 		return false;
@@ -86,7 +98,6 @@ public:
 };
 
 HWND MainWndHandle = NULL;
-#endif
 
 CSandMan* theGUI = NULL;
 
@@ -102,6 +113,8 @@ CSandMan::CSandMan(QWidget *parent)
 	QApplication::instance()->installNativeEventFilter(new CNativeEventFilter);
 #endif
 
+	CArchive::Init();
+
 	theGUI = this;
 
 	m_DarkTheme = false;
@@ -110,6 +123,8 @@ CSandMan::CSandMan(QWidget *parent)
 	QDesktopServices::setUrlHandler("http", this, "OpenUrl");
 	QDesktopServices::setUrlHandler("https", this, "OpenUrl");
 	QDesktopServices::setUrlHandler("sbie", this, "OpenUrl");
+
+	m_StartMenuUpdatePending = false;
 
 	m_ThemeUpdatePending = false;
 	m_DefaultStyle = QApplication::style()->objectName();
@@ -151,6 +166,8 @@ CSandMan::CSandMan(QWidget *parent)
 
 	theAPI = new CSbiePlusAPI(this);
 	connect(theAPI, SIGNAL(StatusChanged()), this, SLOT(OnStatusChanged()));
+
+	connect(theAPI, SIGNAL(BoxAdded(const CSandBoxPtr&)), this, SLOT(OnBoxAdded(const CSandBoxPtr&)));
 	connect(theAPI, SIGNAL(BoxClosed(const CSandBoxPtr&)), this, SLOT(OnBoxClosed(const CSandBoxPtr&)));
 
 	QString appTitle = tr("Sandboxie-Plus v%1").arg(GetVersion());
@@ -175,7 +192,8 @@ CSandMan::CSandMan(QWidget *parent)
 	QWidget* pMenuWidget = new QWidget(this);
 	m_pMenuLayout = new QHBoxLayout(pMenuWidget);
 	m_pMenuLayout->setContentsMargins(0, 0, 0, 0);
-	m_pMenuLayout->addWidget(m_pMenuBar);
+	//m_pMenuLayout->addWidget(m_pMenuBar);
+	m_pMenuLayout->setMenuBar(m_pMenuBar);
 	//m_pMenuLayout->addWidget(m_pLabel);
 	//m_pMenuLayout->addStretch(10);
 	setMenuWidget(pMenuWidget);
@@ -227,6 +245,7 @@ CSandMan::CSandMan(QWidget *parent)
 	m_pPopUpWindow->setWindowFlag(Qt::WindowStaysOnTopHint, bAlwaysOnTop);
 	m_pProgressDialog->setWindowFlag(Qt::WindowStaysOnTopHint, bAlwaysOnTop);
 
+	m_pUpdater = new COnlineUpdater(this);
 
 	//connect(theAPI, SIGNAL(LogMessage(const QString&, bool)), this, SLOT(OnLogMessage(const QString&, bool)));
 	connect(theAPI, SIGNAL(LogSbieMessage(quint32, const QStringList&, quint32)), this, SLOT(OnLogSbieMessage(quint32, const QStringList&, quint32)));
@@ -234,6 +253,8 @@ CSandMan::CSandMan(QWidget *parent)
 	connect(theAPI, SIGNAL(QueuedRequest(quint32, quint32, quint32, const QVariantMap&)), this, SLOT(OnQueuedRequest(quint32, quint32, quint32, const QVariantMap&)), Qt::QueuedConnection);
 	connect(theAPI, SIGNAL(FileToRecover(const QString&, const QString&, const QString&, quint32)), this, SLOT(OnFileToRecover(const QString&, const QString&, const QString&, quint32)), Qt::QueuedConnection);
 	connect(theAPI, SIGNAL(ConfigReloaded()), this, SLOT(OnIniReloaded()));
+
+    connect(qApp, &QGuiApplication::commitDataRequest, this, &CSandMan::commitData);
 
 	m_uTimerID = startTimer(1000);
 
@@ -301,18 +322,18 @@ void CSandMan::StoreState()
 	if(m_pLogTabs) theConf->SetValue("MainWindow/LogTab", m_pLogTabs->currentIndex());
 }
 
-QIcon CSandMan::GetIcon(const QString& Name, bool bAction)
+QIcon CSandMan::GetIcon(const QString& Name, int iAction)
 {
 	int iNoIcons = theConf->GetInt("Options/NoIcons", 2);
 	if (iNoIcons == 2)
 		iNoIcons = theConf->GetInt("Options/ViewMode", 1) == 2 ? 1 : 0;
-	if(bAction && iNoIcons)
+	if(iAction && iNoIcons)
 		return QIcon();
 
 	QString Path = QApplication::applicationDirPath() + "/Icons/" + Name + ".png";
 	if(QFile::exists(Path))
 		return QIcon(Path);
-	return QIcon((bAction ? ":/Actions/" : ":/") + Name + ".png");
+	return QIcon((iAction == 1 ? ":/Actions/" : ":/") + Name + ".png");
 }
 
 void CSandMan::CreateUI()
@@ -327,7 +348,7 @@ void CSandMan::CreateUI()
 		CreateMenus(iViewMode == 1);
 
 	m_pMainLayout = new QVBoxLayout(m_pMainWidget);
-	m_pMainLayout->setMargin(2);
+	m_pMainLayout->setContentsMargins(2,2,2,2);
 	m_pMainLayout->setSpacing(0);
 
 	if(iViewMode == 1)
@@ -367,10 +388,6 @@ void CSandMan::CreateUI()
 		SetPaleteTexture(pizzaPalete, QPalette::Base, QImage(":/Assets/background.png"));
 		GetBoxView()->GetTree()->setPalette(pizzaPalete); // QApplication::setPalette(pizzaPalete);
 		GetFileView()->GetTree()->setPalette(pizzaPalete); // QApplication::setPalette(pizzaPalete);
-	}
-	else {
-		GetBoxView()->GetTree()->setPalette(QApplication::palette());
-		GetFileView()->GetTree()->setPalette(QApplication::palette());
 	}
 }
 
@@ -426,7 +443,7 @@ void CSandMan::CreateHelpMenu(bool bAdvanced)
 		m_pUpdate = m_pMenuHelp->addAction(tr("Check for Updates"), this, SLOT(CheckForUpdates()));
 		m_pMenuHelp->addSeparator();
 		m_pAboutQt = m_pMenuHelp->addAction(tr("About the Qt Framework"), this, SLOT(OnAbout()));
-		m_pAbout = m_pMenuHelp->addAction(CSandMan::GetIcon("IconFull", false), tr("About Sandboxie-Plus"), this, SLOT(OnAbout()));
+		m_pAbout = m_pMenuHelp->addAction(CSandMan::GetIcon("IconFull", 2), tr("About Sandboxie-Plus"), this, SLOT(OnAbout()));
 }
 
 void CSandMan::CreateMenus(bool bAdvanced)
@@ -436,6 +453,7 @@ void CSandMan::CreateMenus(bool bAdvanced)
 	m_pMenuFile = m_pMenuBar->addMenu(tr("&Sandbox"));
 		m_pNewBox = m_pMenuFile->addAction(CSandMan::GetIcon("NewBox"), tr("Create New Box"), this, SLOT(OnSandBoxAction()));
 		m_pNewGroup = m_pMenuFile->addAction(CSandMan::GetIcon("Group"), tr("Create Box Group"), this, SLOT(OnSandBoxAction()));
+		m_pImportBox = m_pMenuFile->addAction(CSandMan::GetIcon("UnPackBox"), tr("Import Box"), this, SLOT(OnSandBoxAction()));
 		m_pMenuFile->addSeparator();
 		m_pEmptyAll = m_pMenuFile->addAction(CSandMan::GetIcon("EmptyAll"), tr("Terminate All Processes"), this, SLOT(OnEmptyAll()));
 		m_pDisableForce = m_pMenuFile->addAction(tr("Pause Forcing Programs"), this, SLOT(OnDisableForce()));
@@ -634,6 +652,7 @@ void CSandMan::CreateOldMenus()
 		m_pSandbox->addSeparator();
 		m_pNewBox = m_pSandbox->addAction(CSandMan::GetIcon("NewBox"), tr("Create New Sandbox"), this, SLOT(OnSandBoxAction()));
 		m_pNewGroup = m_pSandbox->addAction(CSandMan::GetIcon("Group"), tr("Create New Group"), this, SLOT(OnSandBoxAction()));
+		m_pImportBox = m_pSandbox->addAction(CSandMan::GetIcon("UnPackBox"), tr("Import Sandbox"), this, SLOT(OnSandBoxAction()));
 
 		QAction* m_pSetContainer = m_pSandbox->addAction(CSandMan::GetIcon("Advanced"), tr("Set Container Folder"), this, SLOT(OnSettingsAction()));
 		m_pSetContainer->setData(CSettingsWindow::eAdvanced);
@@ -651,7 +670,7 @@ void CSandMan::CreateOldMenus()
 		m_pMenuSettings = m_pMenuOptions->addAction(CSandMan::GetIcon("Settings"), tr("Global Settings"), this, SLOT(OnSettings()));
 		m_pMenuOptions->addSeparator();
 
-		QAction* m_pProgramAlert = m_pMenuOptions->addAction(CSandMan::GetIcon("Ampel"), tr("Program Alerts"), this, SLOT(OnSettingsAction()));
+		QAction* m_pProgramAlert = m_pMenuOptions->addAction(CSandMan::GetIcon("Alarm"), tr("Program Alerts"), this, SLOT(OnSettingsAction()));
 		m_pProgramAlert->setData(CSettingsWindow::eProgCtrl);
 		QAction* m_pWindowsShell = m_pMenuOptions->addAction(CSandMan::GetIcon("Shell"), tr("Windows Shell Integration"), this, SLOT(OnSettingsAction()));
 		m_pWindowsShell->setData(CSettingsWindow::eShell);
@@ -698,11 +717,13 @@ void CSandMan::CreateToolBar()
 	//m_pToolBar->addAction(m_pMenuEmptyAll);
 	//m_pToolBar->addSeparator();
 	m_pToolBar->addAction(m_pKeepTerminated);
+	//m_pToolBar->addSeparator();
 	//m_pToolBar->addAction(m_pCleanUp);
 
 	m_pCleanUpButton = new QToolButton();
 	m_pCleanUpButton->setIcon(CSandMan::GetIcon("Clean"));
 	m_pCleanUpButton->setToolTip(tr("Cleanup"));
+	m_pCleanUpButton->setText(tr("Cleanup"));
 	m_pCleanUpButton->setPopupMode(QToolButton::MenuButtonPopup);
 	m_pCleanUpButton->setMenu(m_pCleanUpMenu);
 	//QObject::connect(m_pCleanUpButton, SIGNAL(triggered(QAction*)), , SLOT());
@@ -750,25 +771,24 @@ void CSandMan::CreateLabel()
 
 void CSandMan::UpdateLabel()
 {
-	COnlineUpdater::Instance()->CheckPendingUpdate();
-
 	QString LabelText;
 	QString LabelTip;
 
-	if (!theConf->GetString("Options/PendingUpdatePackage").isEmpty())
+	if (theConf->GetBool("Updater/PendingUpdate"))
 	{
-		LabelText = tr("<a href=\"sbie://update/package\" style=\"color: red;\">There is a new build of Sandboxie-Plus ready</a>");
-
-		LabelTip = tr("Click to install update");
-
-		//auto neon = new CNeonEffect(10, 4, 180); // 140
-		//m_pLabel->setGraphicsEffect(NULL);
-	}
-	else if (!theConf->GetString("Options/PendingUpdateVersion").isEmpty())
-	{
-		LabelText = tr("<a href=\"sbie://update/check\" style=\"color: red;\">There is a new build of Sandboxie-Plus available</a>");
-
-		LabelTip = tr("Click to download update");
+		QString FilePath = theConf->GetString("Updater/InstallerPath");
+		if (!FilePath.isEmpty() && QFile::exists(FilePath)) {
+			LabelText = tr("<a href=\"sbie://update/installer\" style=\"color: red;\">There is a new Sandboxie-Plus release ready</a>");
+			LabelTip = tr("Click to run installer");
+		}
+		else if (!theConf->GetString("Updater/UpdateVersion").isEmpty()){
+			LabelText = tr("<a href=\"sbie://update/apply\" style=\"color: red;\">There is a new Sandboxie-Plus update ready</a>");
+			LabelTip = tr("Click to apply update");
+		}
+		else {
+			LabelText = tr("<a href=\"sbie://update/check\" style=\"color: red;\">There is a new build of Sandboxie-Plus available</a>");
+			LabelTip = tr("Click to download update");
+		}
 
 		//auto neon = new CNeonEffect(10, 4, 180); // 140
 		//m_pLabel->setGraphicsEffect(NULL);
@@ -865,7 +885,7 @@ void CSandMan::CreateView(int iViewMode)
 
 		QWidget* pFileView = new QWidget();
 		QGridLayout* pFileLayout = new QGridLayout(pFileView);
-		pFileLayout->setMargin(0);
+		pFileLayout->setContentsMargins(0,0,0,0);
 
 		pFileLayout->addItem(new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Minimum), 0, 0, 1, 1);
 
@@ -976,7 +996,7 @@ void CSandMan::CreateView(int iViewMode)
 
 void CSandMan::CheckForUpdates(bool bManual)
 {
-	COnlineUpdater::Instance()->CheckForUpdates(bManual);
+	m_pUpdater->CheckForUpdates(bManual);
 }
 
 #include "SandManTray.cpp"
@@ -1046,6 +1066,20 @@ void CSandMan::closeEvent(QCloseEvent *e)
 	QApplication::quit();
 }
 
+void CSandMan::commitData(QSessionManager& manager)
+{
+    //if (manager.allowsInteraction()) 
+	//{
+    //	manager.cancel();
+	//	return;
+    //} 
+
+	m_pBoxView->SaveState();
+	m_pFileView->SaveState();
+	StoreState();
+	theConf->Sync();
+}
+
 QIcon CSandMan::GetBoxIcon(int boxType, bool inUse)// , int iBusy)
 {
 	//EBoxColors color = eYellow;
@@ -1071,7 +1105,7 @@ QIcon CSandMan::GetBoxIcon(int boxType, bool inUse)// , int iBusy)
 	return GetColorIcon(m_BoxColors[CSandBoxPlus::eDefault], inUse);
 }
 
-QIcon CSandMan::GetColorIcon(QColor boxColor, bool inUse)
+QIcon CSandMan::GetColorIcon(QColor boxColor, bool inUse/*, bool bOut*/)
 {
 	static QPixmap Sand;
 	if(Sand.isNull())
@@ -1085,23 +1119,36 @@ QIcon CSandMan::GetColorIcon(QColor boxColor, bool inUse)
 	if(Items.isNull())
 		Items = QPixmap(":/Boxes/Items");
 
+	static QPixmap Out;
+	if(Out.isNull())
+		Out = QPixmap(":/Boxes/Out");
+
 	QRgb rgb = boxColor.rgba();
 	QImage MySand = Sand.toImage();
-	for (QRgb* c = (QRgb*)MySand.bits(); c != (QRgb*)(MySand.bits() + MySand.byteCount ()); c++) {
-		if(*c == 0xFFFFFFFF)
+	//if (!bOut) {
+	for (QRgb* c = (QRgb*)MySand.bits(); c != (QRgb*)(MySand.bits() + MySand.sizeInBytes()); c++) {
+		if (*c == 0xFFFFFFFF)
 			*c = rgb;
 	}
-
+	//}
+	
 	QPixmap result(32, 32);
 	result.fill(Qt::transparent); // force alpha channel
 	QPainter painter(&result);
+	//if (bOut) {
+	//	QImage MyOut = Out.toImage();
+	//	for (QRgb* c = (QRgb*)MyOut.bits(); c != (QRgb*)(MyOut.bits() + MyOut.sizeInBytes()); c++) {
+	//		*c = rgb;
+	//	}
+	//	painter.drawPixmap(0, 0, QPixmap::fromImage(MyOut));
+	//}
 	painter.drawPixmap(0, 0, QPixmap::fromImage(MySand));
 	painter.drawPixmap(0, 0, Frame);
 	if (inUse) 
 	{	
 		//rgb = change_hsv_c(rgb, -60, 2, 1); // yellow -> red
 
-		my_rgb rgb1 = { qRed(rgb), qGreen(rgb), qBlue(rgb) };
+		my_rgb rgb1 = { (double)qRed(rgb), (double)qGreen(rgb), (double)qBlue(rgb) };
 		my_hsv hsv = rgb2hsv(rgb1);
 
 		if((hsv.h >= 30 && hsv.h < 150) || (hsv.h >= 210 && hsv.h < 330))		hsv.h -= 60;
@@ -1116,7 +1163,7 @@ QIcon CSandMan::GetColorIcon(QColor boxColor, bool inUse)
 		rgb = qRgb(rgb2.r, rgb2.g, rgb2.b);
 
 		QImage MyItems = Items.toImage();
-		for (QRgb* c = (QRgb*)MyItems.bits(); c != (QRgb*)(MyItems.bits() + MyItems.byteCount()); c++) {
+		for (QRgb* c = (QRgb*)MyItems.bits(); c != (QRgb*)(MyItems.bits() + MyItems.sizeInBytes()); c++) {
 			if (*c == 0xFF000000)
 				*c = rgb;
 		}
@@ -1138,9 +1185,25 @@ QIcon CSandMan::MakeIconBusy(const QIcon& Icon, int Index)
 	QPainter painter(&result);
 	painter.drawPixmap(0, 0, base);
 
-	QMatrix rm;
+	QTransform  rm;
 	rm.rotate(90 * (Index % 4));
 	painter.drawPixmap(8, 8, overlay.transformed(rm));
+	return QIcon(result);
+}
+
+QIcon CSandMan::MakeIconRecycle(const QIcon& Icon)
+{
+	static QPixmap overlay;
+	if(overlay.isNull())
+		overlay = QPixmap(":/Boxes/AutoDel");
+
+	QPixmap base = Icon.pixmap(32, 32);
+	QPixmap result(base.width(), base.height());
+	result.fill(Qt::transparent); // force alpha channel
+	QPainter painter(&result);
+	painter.drawPixmap(0, 0, base);
+
+	painter.drawPixmap(8, 8, overlay);
 	return QIcon(result);
 }
 
@@ -1326,40 +1389,15 @@ void CSandMan::timerEvent(QTimerEvent* pEvent)
 	if (!isVisible() || windowState().testFlag(Qt::WindowMinimized))
 		return;
 
+	//QUERY_USER_NOTIFICATION_STATE NState; // todo
+	//if (SHQueryUserNotificationState(&NState) == S_OK)
+	//	;
+
 	theAPI->UpdateWindowMap();
 
 	m_pBoxView->Refresh();
 
-	int iCheckUpdates = theConf->GetInt("Options/CheckForUpdates", 2);
-	if (iCheckUpdates != 0)
-	{
-		time_t NextUpdateCheck = theConf->GetUInt64("Options/NextCheckForUpdates", 0);
-		if (NextUpdateCheck == 0)
-			theConf->SetValue("Options/NextCheckForUpdates", QDateTime::currentDateTime().addDays(7).toTime_t());
-		else if(QDateTime::currentDateTime().toTime_t() >= NextUpdateCheck)
-		{
-			if (iCheckUpdates == 2)
-			{
-				bool bCheck = false;
-				iCheckUpdates = CCheckableMessageBox::question(this, "Sandboxie-Plus", tr("Do you want to check if there is a new version of Sandboxie-Plus?")
-					, tr("Don't show this message again."), &bCheck, QDialogButtonBox::Yes | QDialogButtonBox::No, QDialogButtonBox::Yes, QMessageBox::Information) == QDialogButtonBox::Ok ? 1 : 0;
-
-				if (bCheck)
-					theConf->SetValue("Options/CheckForUpdates", iCheckUpdates);
-			}
-
-			if (iCheckUpdates == 0)
-				theConf->SetValue("Options/NextCheckForUpdates", QDateTime::currentDateTime().addDays(7).toTime_t());
-			else
-			{
-				theConf->SetValue("Options/NextCheckForUpdates", QDateTime::currentDateTime().addDays(1).toTime_t());
-				
-				COnlineUpdater::Instance()->CheckForUpdates(false);
-			}
-		}
-	}
-
-	COnlineUpdater::Process();
+	m_pUpdater->Process();
 
 	if (!m_MissingTemplates.isEmpty())
 	{
@@ -1472,6 +1510,144 @@ finish:
 	return Ret;
 }
 
+void CSandMan::OnBoxAdded(const CSandBoxPtr& pBox)
+{
+	connect(pBox.data(), SIGNAL(StartMenuChanged()), this, SLOT(OnStartMenuChanged()));
+}
+
+void CSandMan::EnumBoxLinks(QMap<QString, QMap<QString,QString> > &BoxLinks, const QString& Prefix, const QString& Folder, bool bWithSubDirs)
+{
+	QRegularExpression exp("/\\[[0-9Sa-zA-Z_]+\\] ");
+
+	QStringList	Files = ListDir(Folder, QStringList() << "*.lnk" << "*.url" << "*.pif", bWithSubDirs);
+	foreach(QString File, Files)
+	{
+		auto result = exp.match(File);
+		if(!result.hasMatch())
+			continue;
+
+		int pos = result.capturedStart() + 1;
+		int len = result.capturedLength() - 1;
+		QString BoxName = File.mid(pos + 1, len - 3).toLower();
+		BoxLinks[BoxName].insert((Prefix + "/" + QString(File).remove(pos, len)).toLower(), Folder + "/" + File);
+	}
+}
+
+void CSandMan::CleanupShortcutPath(const QString& Path)
+{
+	QRegularExpression exp("\\[[0-9Sa-zA-Z_]+\\] ");
+
+	StrPair PathName = Split2(Path, "/", true);
+	if (PathName.first.indexOf(exp) != -1) {
+		if (ListDir(PathName.first).isEmpty())
+		{
+			QDir().rmdir(PathName.first);
+			//qDebug() << "delete dir" << PathName.first;
+			CleanupShortcutPath(PathName.first);
+		}
+	}
+}
+
+void CSandMan::DeleteShortcut(const QString& Path)
+{
+	QFile::remove(Path);
+	//qDebug() << "delete link" << Path;
+	CleanupShortcutPath(Path);
+}
+
+void CSandMan::CleanUpStartMenu(QMap<QString, QMap<QString, QString> >& BoxLinks)
+{
+	for (auto I = BoxLinks.begin(); I != BoxLinks.end(); ++I) {
+		for (auto J = I->begin(); J != I->end(); ++J) {
+			//qDebug() << "Delete Shortcut" << J.value();
+			OnLogMessage(tr("Removed Shortcut: %1").arg(J.key()));
+			DeleteShortcut(J.value());
+		}
+	}
+}
+
+void CSandMan::ClearStartMenu()
+{
+	QMap<QString, QMap<QString, QString> > BoxLinks;
+	EnumBoxLinks(BoxLinks, "Programs", QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation));
+	EnumBoxLinks(BoxLinks, "Desktop", QStandardPaths::writableLocation(QStandardPaths::DesktopLocation), false);
+
+	CleanUpStartMenu(BoxLinks);
+}
+
+void CSandMan::SyncStartMenu()
+{
+	m_StartMenuUpdatePending = false;
+
+	int Mode = theConf->GetInt("Options/IntegrateStartMenu", 0);
+	if (Mode == 0)
+		return;
+
+	QMap<QString, QMap<QString, QString> > BoxLinks;
+	EnumBoxLinks(BoxLinks, "Programs", QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation));
+	EnumBoxLinks(BoxLinks, "Desktop", QStandardPaths::writableLocation(QStandardPaths::DesktopLocation), false);
+
+	QMap<QString, CSandBoxPtr> Boxes = theAPI->GetAllBoxes();
+	foreach(const CSandBoxPtr & pBox, Boxes) 
+	{
+		CSandBoxPlus* pBoxEx = (CSandBoxPlus*)pBox.data();
+
+		QMap<QString, QString>& CurLinks = BoxLinks[pBoxEx->GetName().toLower()];
+
+		foreach(const CSandBoxPlus::SLink & Link, pBoxEx->GetStartMenu())
+		{
+			QString Location;
+			QString Prefix;
+			StrPair LocPath = Split2(Link.Folder, "/");
+			if (Mode == 2) // deep integration
+			{
+				if (LocPath.first == "Programs")
+					Location = QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
+				else if (LocPath.first == "Desktop")
+					Location = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+				else
+					continue;
+			}
+			else //if(Mode == 1) // contained integration
+			{
+				Prefix = "Programs\\Sandboxie-Plus\\";
+				Location = QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation) + "\\Sandboxie-Plus";
+				Location += "\\" + LocPath.first;
+			}
+
+			QString Folder;
+			if (LocPath.second.isEmpty()) {
+				Folder = Location;
+				Location += "\\[" + pBoxEx->GetName() + "] ";
+			} else {
+				Location += "\\[" + pBoxEx->GetName() + "] " + LocPath.second + "\\";
+				Folder = Location;
+			}
+
+			QString Key = QString(Prefix + Link.Folder + "\\" + Link.Name + ".lnk").replace("\\", "/").toLower();
+			QString Path = CurLinks.take(Key);
+			if (Path.isEmpty()) {
+				//qDebug() << "CreateShortcut" << Location + Link.Name;
+				OnLogMessage(tr("Added Shortcut to: %1").arg(Key));
+				QDir().mkpath(Folder);
+				CSbieUtils::CreateShortcut(theAPI, Location + Link.Name,
+						Link.Name, pBoxEx->GetName(), Link.Target, Link.Icon.isEmpty() ? Link.Target : Link.Icon, Link.IconIndex);
+			}
+		}
+	}
+
+	CleanUpStartMenu(BoxLinks);
+}
+
+void CSandMan::OnStartMenuChanged()
+{
+	if (!m_StartMenuUpdatePending)
+	{
+		m_StartMenuUpdatePending = true;
+		QTimer::singleShot(1000, this, SLOT(SyncStartMenu()));
+	}
+}
+
 void CSandMan::OnBoxClosed(const CSandBoxPtr& pBox)
 {
 	if (!pBox->GetBool("NeverDelete", false) && pBox->GetBool("AutoDelete", false) && !pBox->IsEmpty())
@@ -1511,7 +1687,7 @@ void CSandMan::OnStatusChanged()
 		OnLogMessage(tr("Data Directory: %1").arg(QString(theConf->GetConfigDir()).replace("/","\\")));
 
 		//statusBar()->showMessage(tr("Driver version: %1").arg(theAPI->GetVersion()));
-
+		
 		//appTitle.append(tr("   -   Driver: v%1").arg(theAPI->GetVersion()));
 		if (bPortable)
 		{
@@ -1522,11 +1698,13 @@ void CSandMan::OnStatusChanged()
 			int PortableRootDir = theConf->GetInt("Options/PortableRootDir", 2);
 			if (PortableRootDir == 2)
 			{
+				QString NtBoxRoot = theAPI->GetGlobalSettings()->GetText("FileRootPath", "\\??\\%SystemDrive%\\Sandbox\\%USER%\\%SANDBOX%", false, false).replace("GlobalSettings", "[BoxName]");
+
 				bool State = false;
 				PortableRootDir = CCheckableMessageBox::question(this, "Sandboxie-Plus", 
 					tr("Sandboxie-Plus was started in portable mode, do you want to put the Sandbox folder into its parent directory?\nYes will choose: %1\nNo will choose: %2")
-					.arg(BoxPath)
-					.arg("C:\\Sandbox") // todo resolve os drive properly
+					.arg(BoxPath + "\\[BoxName]")
+					.arg(theAPI->Nt2DosPath(NtBoxRoot))
 					, tr("Don't show this message again."), &State, QDialogButtonBox::Yes | QDialogButtonBox::No, QDialogButtonBox::Yes, QMessageBox::Information) == QDialogButtonBox::Yes ? 1 : 0;
 
 				if (State)
@@ -1597,9 +1775,21 @@ void CSandMan::OnStatusChanged()
 
 		SB_STATUS Status = theAPI->ReloadBoxes(true);
 
-		if (!Status.IsError() && !theAPI->GetAllBoxes().contains("defaultbox")) {
-			OnLogMessage(tr("Default sandbox not found; creating: %1").arg("DefaultBox"));
-			theAPI->CreateBox("DefaultBox");
+		if (!Status.IsError()) {
+
+			auto AllBoxes = theAPI->GetAllBoxes();
+
+			m_pBoxView->ClearUserUIConfig(AllBoxes);
+
+			foreach(const QString & Key, theConf->ListKeys("SizeCache")) {
+				if (!AllBoxes.contains(Key.toLower()) || !theConf->GetBool("Options/WatchBoxSize", false))
+					theConf->DelValue("SizeCache/" + Key);
+			}
+
+			if (!AllBoxes.contains("defaultbox")) {
+				OnLogMessage(tr("Default sandbox not found; creating: %1").arg("DefaultBox"));
+				theAPI->CreateBox("DefaultBox");
+			}
 		}
 
 		if (isVisible())
@@ -1758,8 +1948,8 @@ void CSandMan::OnLogSbieMessage(quint32 MsgCode, const QStringList& MsgData, qui
 	if ((MsgCode & 0xFFFF) == 6004) // certificate error
 	{
 		static quint64 iLastCertWarning = 0;
-		if (iLastCertWarning + 60 < QDateTime::currentDateTime().toTime_t()) { // reset after 60 seconds
-			iLastCertWarning = QDateTime::currentDateTime().toTime_t();
+		if (iLastCertWarning + 60 < QDateTime::currentDateTime().toSecsSinceEpoch()) { // reset after 60 seconds
+			iLastCertWarning = QDateTime::currentDateTime().toSecsSinceEpoch();
 			
 			QString Message;
 			if (!MsgData[2].isEmpty())
@@ -1898,9 +2088,25 @@ void CSandMan::OnQueuedRequest(quint32 ClientPid, quint32 ClientTid, quint32 Req
 
 #include "SandManRecovery.cpp"
 
-int CSandMan::ShowQuestion(const QString& question, const QString& checkBoxText, bool* checkBoxSetting, int buttons, int defaultButton)
+int CSandMan::ShowQuestion(const QString& question, const QString& checkBoxText, bool* checkBoxSetting, int buttons, int defaultButton, int type)
 {
-	return CCheckableMessageBox::question(this, "Sandboxie-Plus", question, checkBoxText, checkBoxSetting, (QDialogButtonBox::StandardButtons)buttons, (QDialogButtonBox::StandardButton)defaultButton, QMessageBox::Question);
+	int ret =  CCheckableMessageBox::question(this, "Sandboxie-Plus", question, checkBoxText, checkBoxSetting, (QDialogButtonBox::StandardButtons)buttons, (QDialogButtonBox::StandardButton)defaultButton, (QMessageBox::Icon)type);
+	QTimer::singleShot(10, [this]() {
+		this->raise();
+	});
+	return ret;
+}
+
+void CSandMan::ShowMessage(const QString& message, int type)
+{
+    QMessageBox mb(this);
+    mb.setWindowTitle("Sandboxie-Plus");
+    mb.setIconPixmap(QMessageBox::standardIcon((QMessageBox::Icon)type));
+    mb.setText(message);
+    mb.exec();
+	QTimer::singleShot(10, [this]() {
+		this->raise();
+	});
 }
 
 void CSandMan::OnNotAuthorized(bool bLoginRequired, bool& bRetry)
@@ -1939,10 +2145,48 @@ void CSandMan::OnSandBoxAction()
 {
 	QAction* pAction = qobject_cast<QAction*>(sender());
 
-	if(pAction == m_pNewBox)
+	if (pAction == m_pNewBox)
 		GetBoxView()->AddNewBox();
-	else if(pAction == m_pNewGroup)
+	else if (pAction == m_pNewGroup)
 		GetBoxView()->AddNewGroup();
+	else if (pAction == m_pImportBox)
+	{
+		QString Value = QFileDialog::getOpenFileName(this, tr("Select file name"), "", tr("7-zip Archive (*.7z)"));
+		if (Value.isEmpty())
+			return;
+
+		StrPair PathName = Split2(Value, "/", true);
+		StrPair NameEx = Split2(PathName.second, ".", true);
+		QString Name = NameEx.first;
+
+		CSandBoxPtr pBox;
+		for (;;) {
+			pBox = theAPI->GetBoxByName(Name);
+			if (pBox.isNull())
+				break;
+			Name = QInputDialog::getText(this, "Sandboxie-Plus", tr("This name is already in use, please select an alternative box name"), QLineEdit::Normal, Name);
+			if (Name.isEmpty())
+				return;
+		}
+
+		SB_PROGRESS Status = theAPI->CreateBox(Name);
+		if (!Status.IsError()) {
+			pBox = theAPI->GetBoxByName(Name);
+			if (pBox) {
+				auto pBoxEx = pBox.objectCast<CSandBoxPlus>();
+				Status = pBoxEx->ImportBox(Value);
+			}
+		}
+		if (Status.GetStatus() == OP_ASYNC) {
+			Status = theGUI->AddAsyncOp(Status.GetValue(), true, tr("Importing: %1").arg(Value));
+			if (Status.IsError()) {
+				theGUI->DeleteBoxContent(pBox, CSandMan::eForDelete);
+				pBox->RemoveBox();
+			}
+		}
+		else
+			CSandMan::CheckResults(QList<SB_STATUS>() << Status);
+	}
 }
 
 void CSandMan::OnEmptyAll()
@@ -2210,6 +2454,8 @@ void CSandMan::OnRefresh()
 	QMap<QString, CSandBoxPtr> Boxes = theAPI->GetAllBoxes();
 	foreach(const CSandBoxPtr & pBox, Boxes) {
 		pBox.objectCast<CSandBoxPlus>()->UpdateSize();
+		if (theConf->GetBool("Options/ScanStartMenu", true))
+			pBox.objectCast<CSandBoxPlus>()->ScanStartMenu();
 	}
 }
 
@@ -2392,24 +2638,15 @@ void CSandMan::OnResetGUI()
 	theConf->DelValue("FileBrowserWindow/Window_Geometry");
 	theConf->DelValue("MainWindow/FileTree_Columns");
 	theConf->DelValue("NewBoxWindow/Window_Geometry");
-	theConf->DelValue("OptionsWindow/Window_Geometry");
-	theConf->DelValue("OptionsWindow/Run_Columns");
-	theConf->DelValue("OptionsWindow/AutoRun_Columns");
-	theConf->DelValue("OptionsWindow/Groups_Columns");
-	theConf->DelValue("OptionsWindow/Forced_Columns");
-	theConf->DelValue("OptionsWindow/Stop_Columns");
-	theConf->DelValue("OptionsWindow/Start_Columns");
-	theConf->DelValue("OptionsWindow/INet_Columns");
-	theConf->DelValue("OptionsWindow/NetFw_Columns");
-	theConf->DelValue("OptionsWindow/Access_Columns");
-	theConf->DelValue("OptionsWindow/Recovery_Columns");
-	theConf->DelValue("OptionsWindow/Templates_Columns");
 	theConf->DelValue("PopUpWindow/Window_Geometry");
 	theConf->DelValue("RecoveryWindow/Window_Geometry");
 	theConf->DelValue("RecoveryWindow/TreeView_Columns");
 	theConf->DelValue("SelectBoxWindow/Window_Geometry");
 	theConf->DelValue("SettingsWindow/Window_Geometry");
 	theConf->DelValue("SnapshotsWindow/Window_Geometry");
+	QStringList Options = theConf->ListKeys("OptionsWindow");
+	foreach(const QString& Option, Options)
+		theConf->DelValue("OptionsWindow/" + Option);
 
 //	theConf->SetValue("Options/DPIScaling", 1);
 	theConf->SetValue("Options/FontScaling", 100);
@@ -2432,8 +2669,8 @@ void CSandMan::OnEditIni()
 			theConf->SetValue("Options/NoEditInfo", false);
 	}
 
-	wstring Editor = theConf->GetString("Options/Editor", "notepad.exe").toStdWString();
-	wstring IniPath = theAPI->GetIniPath().toStdWString();
+	std::wstring Editor = theConf->GetString("Options/Editor", "notepad.exe").toStdWString();
+	std::wstring IniPath = theAPI->GetIniPath().toStdWString();
 
 	SHELLEXECUTEINFO si = { 0 };
 	si.cbSize = sizeof(SHELLEXECUTEINFO);
@@ -2611,6 +2848,13 @@ QString CSandMan::FormatError(const SB_STATUS& Error)
 	case SB_NameExists:		Message = tr("A sandbox with that name already exists"); break;
 	case SB_PasswordBad:	Message = tr("The config password must not be longer than 64 characters"); break;
 	case SB_Canceled:		Message = tr("The operation was canceled by the user"); break;
+
+	case SBX_7zNotReady:	Message = tr("Import/Export not available, 7z.dll could not be loaded"); break;
+	case SBX_7zCreateFailed: Message = tr("Failed to create the box archive"); break;
+	case SBX_7zOpenFailed:	Message = tr("Failed to open the 7z archive"); break;
+	case SBX_7zExtractFailed: Message = tr("Failed to unpack the box archive"); break;
+	case SBX_NotBoxArchive:	Message = tr("The selected 7z file is NOT a box archive"); break;
+
 	default:				return tr("Unknown Error Status: 0x%1").arg((quint32)Error.GetStatus(), 8, 16, QChar('0'));
 	}
 
@@ -2643,14 +2887,18 @@ void CSandMan::OpenUrl(const QUrl& url)
 	QString path = url.path();	
 	QString query = url.query();
 
-	if (scheme == "sbie") {	
+	if (scheme == "sbie") {
 		if (path == "/check")
-			return COnlineUpdater::Instance()->DownloadUpdate();
-		if (path == "/package")
-			return COnlineUpdater::Instance()->InstallUpdate();
-		if (path == "/cert")
-			return COnlineUpdater::Instance()->UpdateCert();
-		return OpenUrl("https://sandboxie-plus.com/sandboxie" + path);
+			m_pUpdater->CheckForUpdates(true);
+		else if (path == "/installer")
+			m_pUpdater->RunInstaller(false);
+		else if (path == "/apply")
+			m_pUpdater->ApplyUpdate(false);
+		else if (path == "/cert")
+			m_pUpdater->UpdateCert();
+		else
+			OpenUrl("https://sandboxie-plus.com/sandboxie" + path);
+		return;
 	}
 
 	int iSandboxed = theConf->GetInt("Options/OpenUrlsSandboxed", 2);
@@ -2677,7 +2925,7 @@ QString CSandMan::GetVersion()
 		+ "." + QString::number(VERSION_REV)
 //#endif
 #if VERSION_UPD > 0
-		+ QString('a' + VERSION_UPD - 1)
+		+ QChar('a' + VERSION_UPD - 1)
 #endif
 		;
 	return Version;
@@ -2732,6 +2980,37 @@ void CSandMan::SetUITheme()
 		font.setPointSizeF(newFontSize);
 		QApplication::setFont(font);
 	}
+
+#if defined(Q_OS_WIN)
+	foreach(QWidget * pWidget, QApplication::topLevelWidgets())
+	{
+		if (pWidget->isVisible())
+			SetTitleTheme((HWND)pWidget->winId());
+	}
+#endif
+}
+
+void CSandMan::SetTitleTheme(const HWND& hwnd)
+{
+	static const int CurrentVersion = QSettings("HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+												QSettings::NativeFormat).value("CurrentBuild").toInt();
+	if (CurrentVersion < 22000) // Windows 11-
+		return;
+
+	HMODULE dwmapi = GetModuleHandle(L"dwmapi.dll");
+	if (dwmapi)
+	{
+		typedef HRESULT(WINAPI* P_DwmSetWindowAttribute)(HWND, DWORD, LPCVOID, DWORD);
+		P_DwmSetWindowAttribute pDwmSetWindowAttribute = reinterpret_cast<P_DwmSetWindowAttribute>(GetProcAddress(dwmapi, "DwmSetWindowAttribute"));
+		if (pDwmSetWindowAttribute)
+		{
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+			BOOL value = m_DarkTheme;
+			pDwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
+		}
+	}
 }
 
 void CSandMan::UpdateTheme()
@@ -2741,6 +3020,11 @@ void CSandMan::UpdateTheme()
 		m_ThemeUpdatePending = true;
 		QTimer::singleShot(500, this, SLOT(SetUITheme()));
 	}
+}
+
+void CSandMan::UpdateTitleTheme(const HWND& hwnd)
+{
+	SetTitleTheme(hwnd);
 }
 
 void CSandMan::LoadLanguage()
@@ -2759,7 +3043,6 @@ void CSandMan::LoadLanguage()
 	LoadLanguage(Lang, "sandman", 0);
 	LoadLanguage(Lang, "qt", 1);
 
-
 	QTreeViewEx::m_ResetColumns = tr("Reset Columns");
 	CPanelView::m_CopyCell = tr("Copy Cell");
 	CPanelView::m_CopyRow = tr("Copy Row");
@@ -2776,7 +3059,13 @@ void CSandMan::LoadLanguage(const QString& Lang, const QString& Module, int Inde
 	QString LangAux = Lang; // Short version as fallback
 	LangAux.truncate(LangAux.lastIndexOf('_'));
 
-	QString LangDir = QApplication::applicationDirPath() + "/translations/";
+	C7zFileEngineHandler LangFS(QApplication::applicationDirPath() + "/translations.7z", "lang", this);
+
+	QString LangDir;
+	if (LangFS.IsOpen())
+		LangDir = LangFS.Prefix() + "/";
+	else
+		LangDir = QApplication::applicationDirPath() + "/translations/";
 
 	QString LangPath = LangDir + Module + "_";
 	bool bAux = false;

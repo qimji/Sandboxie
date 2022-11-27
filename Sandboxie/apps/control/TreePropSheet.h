@@ -258,7 +258,7 @@ public:
     @param hIcon
         Handle to icon that should be set for the page.
     @param unIconId
-        Ressource identifier for the icon to set.
+        Resource identifier for the icon to set.
     @param Images
         Reference of the image list to extract the icon from.
     @param nImage
@@ -266,7 +266,7 @@ public:
         as an icon.
 
     @return
-        TRUE on success, FALSE if an error occured.
+        TRUE on success, FALSE if an error occurred.
     */
     static BOOL SetPageIcon(CPropertyPage *pPage, HICON hIcon);
     static BOOL SetPageIcon(CPropertyPage *pPage, UINT unIconId);
@@ -536,6 +536,6 @@ private:
 /////////////////////////////////////////////////////////////////////////////
 
 //{{AFX_INSERT_LOCATION}}
-// Microsoft Visual C++ fügt unmittelbar vor der vorhergehenden Zeile zusätzliche Deklarationen ein.
+// Microsoft Visual C++ fÃ¼gt unmittelbar vor der vorhergehenden Zeile zusÃ¤tzliche Deklarationen ein.
 
 #endif // AFX_TREEPROPSHEET_H__50695CFB_FCE4_4188_ADB4_BF05A5488E41__INCLUDED_

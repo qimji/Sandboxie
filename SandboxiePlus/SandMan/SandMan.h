@@ -49,7 +49,7 @@ public:
 	static QString		FormatError(const SB_STATUS& Error);
 	static void			CheckResults(QList<SB_STATUS> Results);
 
-	static QIcon		GetIcon(const QString& Name, bool bAction = true);
+	static QIcon		GetIcon(const QString& Name, int iAction = 1);
 
 	bool				IsFullyPortable();
 
@@ -65,13 +65,15 @@ public:
 
 	QIcon				GetBoxIcon(int boxType, bool inUse = false);// , bool inBusy = false);
 	QRgb				GetBoxColor(int boxType) { return m_BoxColors[boxType]; }
-	QIcon				GetColorIcon(QColor boxColor, bool inUse = false);
+	QIcon				GetColorIcon(QColor boxColor, bool inUse = false/*, bool bOut = false*/);
 	QIcon				MakeIconBusy(const QIcon& Icon, int Index = 0);
+	QIcon				MakeIconRecycle(const QIcon& Icon);
 	QString				GetBoxDescription(int boxType);
 	
 	bool				CheckCertificate(QWidget* pWidget);
 
 	void				UpdateTheme();
+	void				UpdateTitleTheme(const HWND& hwnd);
 
 	void				UpdateCertState();
 
@@ -79,6 +81,7 @@ signals:
 	void				CertUpdated();
 
 protected:
+	friend class COnlineUpdater;
 	SB_RESULT(void*)	ConnectSbie();
 	SB_STATUS			ConnectSbieImpl();
 	SB_STATUS			DisconnectSbie();
@@ -162,15 +165,23 @@ public slots:
 	void				OnAsyncProgress(int Progress);
 	void				OnCancelAsync();
 
+	void				OnBoxAdded(const CSandBoxPtr& pBox);
 	void				OnBoxClosed(const CSandBoxPtr& pBox);
+
+	void				OnStartMenuChanged();
+
 
 	void				OpenUrl(const QString& url) { OpenUrl(QUrl(url)); }
 	void				OpenUrl(const QUrl& url);
 
-	int					ShowQuestion(const QString& question, const QString& checkBoxText, bool* checkBoxSetting, int buttons, int defaultButton);
+	int					ShowQuestion(const QString& question, const QString& checkBoxText, bool* checkBoxSetting, int buttons, int defaultButton, int type);
+	void				ShowMessage(const QString& message, int type);
 
 	void				OnBoxMenu(const QPoint &);
 	void				OnBoxDblClick(QTreeWidgetItem*);
+
+	void				SyncStartMenu();
+	void				ClearStartMenu();
 
 	void				UpdateLabel();
 
@@ -213,9 +224,12 @@ private slots:
 	void				OnSysTray(QSystemTrayIcon::ActivationReason Reason);
 
 	void				SetUITheme();
+	void				SetTitleTheme(const HWND& hwnd);
 
 	void				AddLogMessage(const QString& Message);
 	void				AddFileRecovered(const QString& BoxName, const QString& FilePath);
+
+	void				commitData(QSessionManager& manager);
 
 private:
 
@@ -237,6 +251,11 @@ private:
 
 	void				LoadState(bool bFull = true);
 	void				StoreState();
+
+	void				EnumBoxLinks(QMap<QString, QMap<QString, QString> >& BoxLinks, const QString& Prefix, const QString& Folder, bool bWithSubDirs = true);
+	void				CleanupShortcutPath(const QString& Path);
+	void				DeleteShortcut(const QString& Path);
+	void				CleanUpStartMenu(QMap<QString, QMap<QString, QString> >& BoxLinks);
 
 	QWidget*			m_pMainWidget;
 	QVBoxLayout*		m_pMainLayout;
@@ -264,6 +283,7 @@ private:
 	QMenu*				m_pMenuFile;
 	QAction*			m_pNewBox;
 	QAction*			m_pNewGroup;
+	QAction*			m_pImportBox;
 	QAction*			m_pEmptyAll;
 	QAction*			m_pWndFinder;
 	QAction*			m_pDisableForce;
@@ -347,6 +367,8 @@ private:
 	bool				m_pProgressModal;
 	CPopUpWindow*		m_pPopUpWindow;
 
+	bool				m_StartMenuUpdatePending;
+
 	bool				m_ThemeUpdatePending;
 	QString				m_DefaultStyle;
 	QPalette			m_DefaultPalett;
@@ -358,6 +380,8 @@ private:
 	QTranslator			m_Translator[2];
 
 public:
+	class COnlineUpdater*m_pUpdater;
+
 	quint32				m_LanguageId;
 	bool				m_DarkTheme;
 	bool				m_FusionTheme;

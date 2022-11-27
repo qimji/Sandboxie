@@ -6,6 +6,7 @@
 CSbieModel::CSbieModel(QObject *parent)
 : CTreeItemModel(parent)
 {
+	m_bTree = true;
 	m_LargeIcons = false;
 
 	//m_BoxEmpty = QIcon(":/BoxEmpty");
@@ -118,7 +119,8 @@ QList<QVariant> CSbieModel::Sync(const QMap<QString, CSandBoxPtr>& BoxList, cons
 	bool bWatchSize = theConf->GetBool("Options/WatchBoxSize", false);
 	bool ColorIcons = theConf->GetBool("Options/ColorBoxIcons", false);
 	bool bPlus = (theAPI->GetFeatureFlags() & CSbieAPI::eSbieFeatureCert) != 0;
-	if (theConf->GetInt("Options/ViewMode", 1) == 2)
+	bool bVintage = theConf->GetInt("Options/ViewMode", 1) == 2;
+	if (bVintage)
 		bPlus = false;
 
 	foreach(const QString& Group, Groups.keys())
@@ -163,7 +165,7 @@ QList<QVariant> CSbieModel::Sync(const QMap<QString, CSandBoxPtr>& BoxList, cons
 		QString ParentGroup = pNode->Path.isEmpty() ? "" : CSbieModel__RemoveGroupMark(pNode->Path.last().toString());
 		int OrderNumber = Groups[ParentGroup].indexOf(Group);
 		if (pNode->OrderNumber != OrderNumber) {
-			pNode->OrderNumber = OrderNumber;
+			pNode->OrderNumber = (OrderNumber == -1) ? Groups[ParentGroup].size() : OrderNumber;
 			Changed = 1;
 		}
 
@@ -207,35 +209,57 @@ QList<QVariant> CSbieModel::Sync(const QMap<QString, CSandBoxPtr>& BoxList, cons
 		QString Group = pNode->Path.isEmpty() ? "" : CSbieModel__RemoveGroupMark(pNode->Path.last().toString());
 		int OrderNumber = Groups[Group].indexOf(pBox->GetName());
 		if (pNode->OrderNumber != OrderNumber) {
-			pNode->OrderNumber = OrderNumber;
+			pNode->OrderNumber = (OrderNumber == -1) ? Groups[Group].size() : OrderNumber;
 			Changed = 1;
 		}
 
 		QMap<quint32, CBoxedProcessPtr> ProcessList = pBox->GetProcessList();
 
 		bool inUse = Sync(pBox, pNode->Path, ProcessList, New, Old, Added);
+		bool bOpen = pBoxEx->IsOpen();
 		bool Busy = pBoxEx->IsBusy();
 		int boxType = pBoxEx->GetType();
+		bool boxDel = pBoxEx->IsAutoDelete();
 		int boxColor = pBoxEx->GetColor();
 		
 		QIcon Icon;
-		if (pNode->inUse != inUse || (pNode->busyState || Busy) || pNode->boxType != boxType || pNode->boxColor != boxColor)
+		QString Action = pBox->GetText("DblClickAction");
+		if (!Action.isEmpty() && Action.left(1) != "!")
+		{
+			if (pNode->Action != Action || (pNode->busyState || Busy) || pNode->boxDel != boxDel) {
+				Icon = m_IconProvider.icon(QFileInfo(pBoxEx->GetCommandFile(Action)));
+				pNode->Action = Action;
+			}
+		}
+		else if (pNode->inUse != inUse || pNode->bOpen != bOpen || (pNode->busyState || Busy) || pNode->boxType != boxType || pNode->boxColor != boxColor || pNode->boxDel != boxDel)
 		{
 			pNode->inUse = inUse;
+			pNode->bOpen = bOpen;
 			pNode->boxType = boxType;
 			pNode->boxColor = boxColor;
+			pNode->boxDel = boxDel;
 			//pNode->Icon = pNode->inUse ? m_BoxInUse : m_BoxEmpty;
 			if(ColorIcons)
 				Icon = theGUI->GetColorIcon(boxColor, inUse);
 			else
 				Icon = theGUI->GetBoxIcon(boxType, inUse);
+			pNode->Action.clear();
 		}
 
-		if (!Icon.isNull()) {
-			if (Busy)	Icon = theGUI->MakeIconBusy(Icon, pNode->busyState++);
-			else		pNode->busyState = 0;
+		if (!Icon.isNull()) 
+		{
+			if (Busy)	
+				Icon = theGUI->MakeIconBusy(Icon, pNode->busyState++);
+			else {
+				pNode->busyState = 0;
+
+				if(boxDel && !bVintage)
+					Icon = theGUI->MakeIconRecycle(Icon);
+			}
+			
 			if (m_LargeIcons) // but not for boxes
 				Icon = QIcon(Icon.pixmap(QSize(32,32)).scaled(16, 16, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+
 			pNode->Icon = Icon;
 			Changed = 1; // set change for first column
 		}

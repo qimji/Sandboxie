@@ -418,12 +418,25 @@ BOOL Parse_Command_Line(void)
     //
     //
 
-    if (_wcsicmp(cmd, L"run_sbie_ctrl") == 0) {
+    if (_wcsicmp(cmd, L"run_sbie_ctrl") == 0 || _wcsnicmp(cmd, L"open_agent", 10) == 0) {
 
-        MSG_HEADER req, *rpl = NULL;
+        union {
+            MSG_HEADER req;
+            UCHAR buffer[128];
+        };
+        MSG_HEADER *rpl = NULL;
         if (CallSbieSvcGetUser()) {
             req.length = sizeof(req);
             req.msgid  = MSGID_SBIE_INI_RUN_SBIE_CTRL;
+
+            if (_wcsnicmp(cmd, L"open_agent:", 11) == 0) {
+                cmd += 11;
+                tmp = Eat_String(cmd);
+                ULONG len = ULONG(tmp - cmd) * sizeof(WCHAR);
+                memcpy((WCHAR*)&buffer[req.length], cmd, len);
+                req.length += len;
+            }
+
             rpl = SbieDll_CallServer(&req);
         }
         ExitProcess((rpl && rpl->status == 0) ? EXIT_SUCCESS : EXIT_FAILURE);
@@ -789,7 +802,7 @@ BOOL Parse_Command_Line(void)
 
         return TRUE;
 
-    // show abouth dialog
+    // show about dialog
 
     } else if (wcsncmp(cmd, about_dialog, wcslen(about_dialog)) == 0) {
 
@@ -1337,7 +1350,7 @@ void StartAutoRunKey(LPCWSTR lpKey)
 	UNICODE_STRING Data;
 	NTSTATUS Status;
 
-    // Get the native unhooked fucntion in order to enumerate only the sandboxed entries
+    // Get the native unhooked function in order to enumerate only the sandboxed entries
     P_NtOpenKey __sys_NtOpenKey = (P_NtOpenKey)SbieDll_GetSysFunction(L"NtOpenKey");
     P_NtEnumerateValueKey __sys_NtEnumerateValueKey = (P_NtEnumerateValueKey)SbieDll_GetSysFunction(L"NtEnumerateValueKey");
 
@@ -1436,7 +1449,7 @@ void StartAutoAutoFolder(LPCWSTR lpPath)
 	//HANDLE Event;
     PFILE_ID_BOTH_DIR_INFORMATION DirInformation;
 
-    // Get the native unhooked fucntion in order to enumerate only the sandboxed entries
+    // Get the native unhooked function in order to enumerate only the sandboxed entries
     P_NtCreateFile __sys_NtCreateFile = (P_NtCreateFile)SbieDll_GetSysFunction(L"NtCreateFile");
     P_NtQueryDirectoryFile __sys_NtQueryDirectoryFile = (P_NtQueryDirectoryFile)SbieDll_GetSysFunction(L"NtQueryDirectoryFile");
 	

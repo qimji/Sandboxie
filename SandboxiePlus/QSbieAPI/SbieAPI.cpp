@@ -31,6 +31,7 @@ typedef long NTSTATUS;
 #include "SbieDefs.h"
 
 #include "..\..\Sandboxie\common\win32_ntddk.h"
+#include "..\..\Sandboxie\common\defines.h"
 
 #include "..\..\Sandboxie\core\drv\api_defs.h"
 #include "..\..\Sandboxie\core\drv\api_flags.h"
@@ -888,7 +889,7 @@ ULONG CSbieAPI__GetVolumeSN(wchar_t* path)
 
 QString CSbieAPI::ResolveAbsolutePath(const QString& Path)
 {
-	wstring path = Path.toStdWString();
+	std::wstring path = Path.toStdWString();
 	UNICODE_STRING uni;
     RtlInitUnicodeString(&uni, path.c_str());
 	OBJECT_ATTRIBUTES objattrs;
@@ -1138,7 +1139,7 @@ quint32 CSbieAPI::GetSessionID() const
 
 SB_STATUS CSbieAPI::ReloadBoxes(bool bForceUpdate)
 {
-	if (bForceUpdate || (!m_bBoxesDirty && !m_IniWatcher.files().isEmpty()))
+	if (!bForceUpdate && !m_bBoxesDirty && !m_IniWatcher.files().isEmpty())
 		return SB_OK;
 	m_bBoxesDirty = false;
 
@@ -1298,8 +1299,8 @@ QString CSbieAPI::SbieIniGetEx(const QString& Section, const QString& Setting)
 
 QString CSbieAPI::SbieIniGet(const QString& Section, const QString& Setting, quint32 Index, qint32* ErrCode)
 {
-	wstring section = Section.toStdWString();
-	wstring setting = Setting.toStdWString();
+	std::wstring section = Section.toStdWString();
+	std::wstring setting = Setting.toStdWString();
 
 	WCHAR out_buffer[CONF_LINE_LEN] = { 0 };
 
@@ -1350,7 +1351,7 @@ SB_STATUS CSbieAPI::ValidateName(const QString& BoxName)
 	if(BoxName.left(13).compare("UserSettings_", Qt::CaseInsensitive) == 0)
 		return SB_ERR(SB_BadNameDev);
 
-	if (BoxName.contains(QRegExp("[^A-Za-z0-9_]")))
+	if (BoxName.contains(QRegularExpression("[^A-Za-z0-9_]")))
 		return SB_ERR(SB_BadNameChar);
 
 	return SB_OK;
@@ -1588,7 +1589,7 @@ SB_STATUS CSbieAPI__QueryBoxPath(SSbieAPI* m, const WCHAR *box_name, WCHAR *out_
 
 SB_STATUS CSbieAPI::UpdateBoxPaths(const CSandBoxPtr& pSandBox)
 {
-	wstring boxName = pSandBox->GetName().toStdWString();
+	std::wstring boxName = pSandBox->GetName().toStdWString();
 
 	ULONG filePathLength = 0;
 	ULONG keyPathLength = 0;
@@ -1597,9 +1598,9 @@ SB_STATUS CSbieAPI::UpdateBoxPaths(const CSandBoxPtr& pSandBox)
 	if (!Status)
 		return Status;
 
-	wstring FileRoot(filePathLength / 2 + 1, '\0');
-	wstring KeyRoot(keyPathLength / 2 + 1, '\0');
-	wstring IpcRoot(ipcPathLength / 2 + 1, '\0');
+	std::wstring FileRoot(filePathLength / 2 + 1, '\0');
+	std::wstring KeyRoot(keyPathLength / 2 + 1, '\0');
+	std::wstring IpcRoot(ipcPathLength / 2 + 1, '\0');
 	Status = CSbieAPI__QueryBoxPath(m, boxName.c_str(), (WCHAR*)FileRoot.data(), (WCHAR*)KeyRoot.data(), (WCHAR*)IpcRoot.data(), &filePathLength, &keyPathLength, &ipcPathLength);
 	if (!Status)
 		return Status;
@@ -1834,7 +1835,7 @@ SB_STATUS CSbieAPI::RunSandboxed(const QString& BoxName, const QString& Command,
 		return SB_ERR(ERROR_INVALID_PARAMETER);
 
 	if (WrkDir.isEmpty())
-		WrkDir = QDir::currentPath();
+		WrkDir = QDir::currentPath().replace("/","\\");
 
 	ULONG cmd_len = Command.length();
 	ULONG dir_len = WrkDir.length();
@@ -1894,20 +1895,14 @@ SB_STATUS CSbieAPI::RunSandboxed(const QString& BoxName, const QString& Command,
 	
 
 	if (rpl->h.status != 0)
-		Status = SB_ERR(rpl->h.status);
+		return SB_ERR(rpl->h.status);
 
-	PROCESS_INFORMATION pi;
-	pi.hProcess = (HANDLE)rpl->hProcess;
-	pi.hThread = (HANDLE)rpl->hThread;
-	pi.dwProcessId = rpl->dwProcessId;
-	pi.dwThreadId = rpl->dwThreadId;
+	CloseHandle((HANDLE)rpl->hProcess);
+	CloseHandle((HANDLE)rpl->hThread);
 
 	free(rpl);
-
-	CloseHandle(pi.hProcess);
-	CloseHandle(pi.hThread);
 	
-	return Status;
+	return SB_OK;
 }
 
 SB_STATUS CSbieAPI__ProceccssExemptionControl(SSbieAPI* m, quint32 process_id, quint32 action_id, ULONG *NewState, ULONG *OldState)
@@ -2089,7 +2084,7 @@ SB_STATUS CSbieAPI::ReloadConf(quint32 flags, quint32 SessionId)
 
 bool CSbieAPI::IsBox(const QString& BoxName, bool& bIsEnabled)
 {
-	wstring box_name = BoxName.toStdWString();
+	std::wstring box_name = BoxName.toStdWString();
 
 	__declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
 	API_IS_BOX_ENABLED_ARGS *args = (API_IS_BOX_ENABLED_ARGS*)parms;
@@ -2213,7 +2208,7 @@ SB_STATUS CSbieAPI::SetSecureParam(const QString& Name, const void* data, size_t
 	__declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
 	API_SECURE_PARAM_ARGS *args = (API_SECURE_PARAM_ARGS*)parms;
 
-	wstring name = Name.toStdWString();
+	std::wstring name = Name.toStdWString();
 
 	memset(parms, 0, sizeof(parms));
 	args->func_code = API_SET_SECURE_PARAM;
@@ -2232,7 +2227,7 @@ SB_STATUS CSbieAPI::GetSecureParam(const QString& Name, void* data, size_t size)
 	__declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
 	API_SECURE_PARAM_ARGS *args = (API_SECURE_PARAM_ARGS*)parms;
 
-	wstring name = Name.toStdWString();
+	std::wstring name = Name.toStdWString();
 
 	memset(parms, 0, sizeof(parms));
 	args->func_code = API_GET_SECURE_PARAM;
@@ -2632,4 +2627,63 @@ void CSbieAPI::LoadEventLog()
 
     if (hEventLog)
         CloseEventLog(hEventLog);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Updater 
+//
+
+SB_RESULT(int) CSbieAPI::RunUpdateUtility(const QStringList& Params, quint32 Elevate, bool Wait)
+{
+	if (Params.isEmpty())
+		return SB_ERR(ERROR_INVALID_PARAMETER);
+
+	QString Command;
+	foreach(const QString & Param, Params) {
+		if (!Command.isEmpty()) Command += " ";
+		Command += "\"" + Param + "\"";
+	}
+
+	ULONG cmd_len = Command.length();
+
+	ULONG req_len = sizeof(PROCESS_RUN_UPDATER_REQ) + (cmd_len + 8) * sizeof(WCHAR);
+	PROCESS_RUN_UPDATER_REQ* req = (PROCESS_RUN_UPDATER_REQ*)malloc(req_len);
+
+	req->h.length = req_len;
+	req->h.msgid = MSGID_PROCESS_RUN_UPDATER;
+	req->elevate = Elevate;
+
+	WCHAR* ptr = (WCHAR*)((ULONG_PTR)req + sizeof(PROCESS_RUN_UPDATER_REQ));
+
+	req->cmd_ofs = (ULONG)((ULONG_PTR)ptr - (ULONG_PTR)req);
+	req->cmd_len = cmd_len;
+	if (cmd_len) {
+		Command.toWCharArray(ptr);
+		ptr += cmd_len;
+	}
+	*ptr++ = L'\0';
+
+	PROCESS_RUN_UPDATER_RPL *rpl;
+	SB_STATUS Status = CallServer(&req->h, &rpl);
+	free(req);
+	if (!Status)
+		return Status;
+	if (!rpl) 
+		return SB_ERR(ERROR_SERVER_DISABLED);
+	
+	if (rpl->h.status != 0)
+		return SB_ERR(rpl->h.status);
+
+	DWORD ExitCode = 0;
+	if (Wait) {
+		WaitForSingleObject((HANDLE)rpl->hProcess, INFINITE);
+		GetExitCodeProcess((HANDLE)rpl->hProcess, &ExitCode);
+	}
+
+	CloseHandle((HANDLE)rpl->hProcess);
+	CloseHandle((HANDLE)rpl->hThread);
+
+	free(rpl);
+
+	return CSbieResult<int>((int)ExitCode);
 }

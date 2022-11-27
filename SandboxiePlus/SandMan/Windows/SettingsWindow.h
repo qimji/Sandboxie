@@ -39,6 +39,8 @@ protected:
 	bool m_SecretMode;
 };
 
+void AddIconToLabel(QLabel* pLabel, const QPixmap& Pixmap);
+
 //////////////////////////////////////////////////////////////////////////
 // CSettingsWindow
 
@@ -109,6 +111,7 @@ private slots:
 
 	void CertChanged();
 	void UpdateCert();
+	void UpdateUpdater();
 
 	void GetUpdates();
 	void OnUpdateData(const QVariantMap& Data, const QVariantMap& Params);
@@ -121,7 +124,7 @@ protected:
 
 	bool eventFilter(QObject *watched, QEvent *e);
 
-	void OnTab(int iTabID);
+	void OnTab(QWidget* pTab);
 
 	void	AddWarnEntry(const QString& Name, int type);
 

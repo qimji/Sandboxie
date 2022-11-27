@@ -23,6 +23,7 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "swedish"; MessagesFile: "isl\Swedish.isl"
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 Name: "ukrainian"; MessagesFile: "compiler:Languages\Ukrainian.isl"
+Name: "vietnamese"; MessagesFile: "isl\Vietnamese.isl"
 ;Name: "armenian"; MessagesFile: "compiler:Languages\Armenian.isl"
 ;Name: "bulgarian"; MessagesFile: "compiler:Languages\Bulgarian.isl"
 ;Name: "catalan"; MessagesFile: "compiler:Languages\Catalan.isl"
@@ -62,6 +63,7 @@ english.UninstallTaskLabel2=How would you like to uninstall Sandboxie-Plus?
 english.UninstallTaskLabel3=&Keep configuration files and sandboxes%nThis is the most recommended option if you plan to reinstall Sandboxie-Plus while keeping your configuration files and sandboxes.
 english.UninstallTaskLabel4=Remove &configuration files%nSelect this option to remove the Sandboxie.ini and Sandboxie-Plus.ini configuration files while keeping the sandboxes unchanged.
 english.UninstallTaskLabel5=Remove configuration files and &sandboxes%nSelect this option to remove all configuration files and sandboxes, including the Sandbox folder located in custom paths with FileRootPath.
+english.RefreshBuild=Download latest Templates.ini and translations
 
 ; Chinese Simplified
 ChineseSimplified.AddSandboxedMenu=添加“在沙盒中运行”菜单
@@ -174,6 +176,7 @@ german.UninstallTaskLabel4=&Entferne die Konfiguration%nWählen Sie diese Option
 german.UninstallTaskLabel5=Entferne die Konfiguration und alle &Sandboxen%nWählen Sie diese Option um alle Konfigurationsdateien und alle Sandboxen, inklusive des Sandboxordners im, durch die Dateisystemquelle, benutzerdefinierten Pfad.
 ; Fix issue #1333 with a space inserted before %1
 german.AutoStartProgram=Starte automatisch %1
+german.RefreshBuild=Neueste Templates.ini und Übersetzungen herunterladen
 
 ; Italian
 Italian.AddSandboxedMenu=Aggiungi l'opzione "Avvia nell'area virtuale" al menu contestuale
@@ -240,6 +243,7 @@ polish.UninstallTaskLabel2=W jaki sposób chcesz odinstalować Sandboxie-Plus?
 polish.UninstallTaskLabel3=Zachowaj pliki &konfiguracyjne i piaskownice%nJest to najbardziej zalecana opcja, jeśli planujesz reinstalować Sandboxie-Plus, zachowując pliki konfiguracyjne i piaskownice.
 polish.UninstallTaskLabel4=Usuń pliki konfigura&cyjne%nWybierz tę opcję, aby usunąć pliki konfiguracyjne Sandboxie.ini i Sandboxie-Plus.ini, zachowując piaskownice bez zmian.
 polish.UninstallTaskLabel5=Usuń pliki konfiguracyjne i pia&skownice%nWybierz tę opcję, aby usunąć wszystkie pliki konfiguracyjne i piaskownice, w tym folder Sandbox znajdujący się w niestandardowych ścieżkach z FileRootPath.
+polish.RefreshBuild=Pobierz najnowsze Templates.ini i tłumaczenia
 
 ; Brazilian Portuguese
 brazilianportuguese.AddSandboxedMenu=Adicionar "Executar na Caixa de Areia" no menu de contexto
@@ -394,3 +398,25 @@ ukrainian.UninstallTaskLabel2=Як ви хочете видалити Sandboxie-
 ukrainian.UninstallTaskLabel3=Зберігти файли конфігурації и пісочниць (&K)%nЦе найбільш рекомендований варіант, якщо ви плануете перевстановити Sandboxie-Plus, зберігши файли конфігурації и пісочниць.
 ukrainian.UninstallTaskLabel4=Видалити файли конфігурації (&C)%nОберіть цей параметр, щоб видалити файли конфігурації Sandboxie.ini та Sandboxie-Plus.ini, залишивши файли пісочниць без змін.
 ukrainian.UninstallTaskLabel5=Видалити файли конфігурації та пісочниць (&S)%nОберіть цей параметр, щоб видалити всі файли конфігурації та пісочниць, включаючи папку Sandbox, яка має місцерозташування в FileRootPath.
+
+; Vietnamese
+vietnamese.AddSandboxedMenu=Thêm "Chạy trong Sandbox" vào menu ngữ cảnh
+vietnamese.AddSandboxedBrowser=Thêm shortcut trên màn hình để khởi động trình duyệt Web trong Sandboxie
+vietnamese.SandboxieStartMenu1=Chạy chương trình bất kỳ trong sandbox
+vietnamese.SandboxieStartMenu2=Chạy trình duyệt web trong Sandbox
+vietnamese.SandboxieStartMenu3=Sandboxie Start Menu
+vietnamese.SandboxedBrowser=Trình duyệt web trong Sandbox
+vietnamese.CustomPageLabel1=Chọn loại cài đặt
+vietnamese.CustomPageLabel2=Cài đặt như thế nào
+vietnamese.CustomPageLabel3=Chọn chế độ cài đặt
+vietnamese.CustomPageInstallMode=Cài đặt {#MyAppName} trên máy tính này
+vietnamese.CustomPageUpgradeMode=Cập nhật cài đặt hiện có của {#MyAppName}
+vietnamese.CustomPagePortableMode=Giải nén tất cả các tệp vào một thư mục để sử dụng di động
+vietnamese.RequiresWin7OrLater=Sandboxie-Plus yêu cầu Windows 7 trở lên.
+vietnamese.ClassicFound=Đã phát hiện cài đặt Sandboxie Classic, nó phải được gỡ cài đặt trước, bạn có muốn gỡ cài đặt nó ngay bây giờ không?
+vietnamese.RunSandboxedMenu=Chạy trong &Sandbox
+vietnamese.UninstallTaskLabel1=Chọn loại gỡ cài đặt
+vietnamese.UninstallTaskLabel2=Bạn muốn gỡ cài đặt Sandboxie-Plus như thế nào?
+vietnamese.UninstallTaskLabel3=&Giữ các tệp cấu hình và Sandbox%nĐây là tùy chọn được đề xuất nhiều nhất nếu bạn định cài đặt lại Sandboxie-Plus trong khi vẫn giữ các tệp cấu hình và các Sandbox của mình.
+vietnamese.UninstallTaskLabel4=Xoá &tập tin cấu hình%nChọn tùy chọn này để xóa các tệp cấu hình Sandboxie.ini và Sandboxie-Plus.ini trong khi vẫn giữ nguyên các Sandbox.
+vietnamese.UninstallTaskLabel5=Xóa các tệp cấu hình và các &Sandbox%nChọn tùy chọn này để xóa tất cả các tệp cấu hình và Sandbox, bao gồm cả thư mục Sandbox nằm trong đường dẫn tùy chỉnh với FileRootPath.

@@ -159,7 +159,7 @@ void COptionsWindow::OnINetItemDoubleClicked(QTreeWidgetItem* pItem, int Column)
 	//QWidget* pProgram = new QWidget();
 	//pProgram->setAutoFillBackground(true);
 	//QHBoxLayout* pLayout = new QHBoxLayout();
-	//pLayout->setMargin(0);
+	//pLayout->setContentsMargins(0,0,0,0);
 	//pLayout->setSpacing(0);
 	//pProgram->setLayout(pLayout);
 	//QComboBox* pCombo = new QComboBox(pProgram);
@@ -430,7 +430,7 @@ void COptionsWindow::ParseAndAddFwRule(const QString& Value, bool disabled, cons
 	QString Action = ProgAction.second.isEmpty() ? ProgAction.first : ProgAction.second;
 
 	pItem->setData(0, Qt::UserRole, Program);
-	bool bAll = Program.isEmpty();
+	bool bAll = Program.isEmpty() || Program == "*";
 	if (bAll)
 		Program = tr("All Programs");
 	bool Not = Program.left(1) == "!";
@@ -445,15 +445,15 @@ void COptionsWindow::ParseAndAddFwRule(const QString& Value, bool disabled, cons
 	pItem->setText(1, Action + (Template.isEmpty() ? "" : " (" + Template + ")"));
 	pItem->setData(1, Qt::UserRole, Template.isEmpty() ? (int)GetFwRuleAction(Action) : -1);
 	
-	QString Port = Tags["port"];
+	QString Port = Tags.value("port");
 	pItem->setText(2, Port);
 	pItem->setData(2, Qt::UserRole, Port);
 
-	QString IP = Tags["address"];
+	QString IP = Tags.value("address");
 	pItem->setText(3, IP);
 	pItem->setData(3, Qt::UserRole, IP);
 
-	QString Prot = Tags["protocol"];
+	QString Prot = Tags.value("protocol");
 	pItem->setText(4, Prot);
 	pItem->setData(4, Qt::UserRole, (int)GetFwRuleProt(Prot));
 
@@ -479,11 +479,11 @@ void COptionsWindow::SaveNetFwRules()
 		QString Prot = pItem->text(4);
 
 		QString Temp = GetFwRuleActionStr(Action);
-		if (!Program.isEmpty()) {
-			//if (Program.contains("=") || Program.contains(";") || Program.contains(",")) // todo: make sbie parse this proeprly
-			//	Program = "\'" + Program + "\'"; 
-			Temp.prepend(Program + ",");
-		}
+		//if (Program.contains("=") || Program.contains(";") || Program.contains(",")) // todo: make sbie parse this proeprly
+		//	Program = "\'" + Program + "\'"; 
+		if (Program.isEmpty())
+			Program = "*";
+		Temp.prepend(Program + ",");
 		QStringList Tags = QStringList(Temp);
 		if (!Port.isEmpty()) Tags.append("Port=" + Port);
 		if (!IP.isEmpty()) Tags.append("Address=" + IP);
@@ -513,7 +513,7 @@ void COptionsWindow::OnNetFwItemDoubleClicked(QTreeWidgetItem* pItem, int Column
 	QWidget* pProgram = new QWidget();
 	pProgram->setAutoFillBackground(true);
 	QHBoxLayout* pLayout = new QHBoxLayout();
-	pLayout->setMargin(0);
+	pLayout->setContentsMargins(0,0,0,0);
 	pLayout->setSpacing(0);
 	pProgram->setLayout(pLayout);
 	QToolButton* pNot = new QToolButton(pProgram);
@@ -668,23 +668,23 @@ void COptionsWindow__SetRowColor(QTreeWidgetItem* pItem, bool bMatch, bool bConf
 	{
 		if (!bMatch)
 		{
-			pItem->setBackgroundColor(i, Qt::white); // todo dark mode
+			pItem->setBackground(i, Qt::white); // todo dark mode
 		}
 		else if(bConflict)
-			pItem->setBackgroundColor(i, QColor(255, 255, 0)); // yellow
+			pItem->setBackground(i, QColor(255, 255, 0)); // yellow
 		else if (!bBlock)
 		{
 			if (bActive)
-				pItem->setBackgroundColor(i, QColor(128, 255, 128)); // dark green
+				pItem->setBackground(i, QColor(128, 255, 128)); // dark green
 			else
-				pItem->setBackgroundColor(i, QColor(224, 240, 224)); // light green
+				pItem->setBackground(i, QColor(224, 240, 224)); // light green
 		}
 		else
 		{
 			if (bActive)
-				pItem->setBackgroundColor(i, QColor(255, 128, 128)); // dark red
+				pItem->setBackground(i, QColor(255, 128, 128)); // dark red
 			else
-				pItem->setBackgroundColor(i, QColor(240, 224, 224)); // light red
+				pItem->setBackground(i, QColor(240, 224, 224)); // light red
 		}
 	}
 }

@@ -357,11 +357,11 @@ _FX const WCHAR* Process_MatchImageAndGetValue(BOX *box, const WCHAR* value, con
 
 
 //---------------------------------------------------------------------------
-// Process_GetConf
+// Process_GetConfEx
 //---------------------------------------------------------------------------
 
 
-_FX const WCHAR* Process_GetConf(PROCESS *proc, const WCHAR* setting)
+_FX const WCHAR* Process_GetConfEx(BOX *box, const WCHAR *image_name, const WCHAR* setting)
 {
     ULONG index = 0;
     const WCHAR *value;
@@ -370,12 +370,12 @@ _FX const WCHAR* Process_GetConf(PROCESS *proc, const WCHAR* setting)
 
     for (index = 0; ; ++index) {
 
-        value = Conf_Get(proc->box->name, setting, index);
+        value = Conf_Get(box->name, setting, index);
         if (! value)
             break;
 
         ULONG level = -1;
-        value = Process_MatchImageAndGetValue(proc->box, value, proc->image_name, &level);
+        value = Process_MatchImageAndGetValue(box, value, image_name, &level);
         if (!value || level > found_level)
             continue;
         found_value = value;
@@ -387,18 +387,29 @@ _FX const WCHAR* Process_GetConf(PROCESS *proc, const WCHAR* setting)
 
 
 //---------------------------------------------------------------------------
-// Process_GetConf_bool
+// Process_GetConf
 //---------------------------------------------------------------------------
 
 
-_FX BOOLEAN Process_GetConf_bool(PROCESS *proc, const WCHAR* setting, BOOLEAN def)
+_FX const WCHAR* Process_GetConf(PROCESS* proc, const WCHAR* setting)
+{
+    return Process_GetConfEx(proc->box, proc->image_name, setting);
+}
+
+
+//---------------------------------------------------------------------------
+// Process_GetConfEx_bool
+//---------------------------------------------------------------------------
+
+
+_FX BOOLEAN Process_GetConfEx_bool(BOX *box, const WCHAR *image_name, const WCHAR* setting, BOOLEAN def)
 {
     const WCHAR *value;
     BOOLEAN retval;
 
     Conf_AdjustUseCount(TRUE);
 
-    value = Process_GetConf(proc, setting);
+    value = Process_GetConfEx(box, image_name, setting);
 
     retval = def;
     if (value) {
@@ -411,6 +422,17 @@ _FX BOOLEAN Process_GetConf_bool(PROCESS *proc, const WCHAR* setting, BOOLEAN de
     Conf_AdjustUseCount(FALSE);
 
     return retval;
+}
+
+
+//---------------------------------------------------------------------------
+// Process_GetConf_bool
+//---------------------------------------------------------------------------
+
+
+_FX BOOLEAN Process_GetConf_bool(PROCESS* proc, const WCHAR* setting, BOOLEAN def)
+{
+    return Process_GetConfEx_bool(proc->box, proc->image_name, setting, def);
 }
 
 
@@ -925,7 +947,8 @@ _FX ULONG Process_MatchPathEx(
 
         mp_flags = TRUE_PATH_CLOSED_FLAG | COPY_PATH_CLOSED_FLAG;
     }
-    else if (!proc->use_privacy_mode || path_code == L'i') {
+    //else if (!proc->use_privacy_mode || path_code == L'i') {
+    else {
 
         //
         // in normal sandbox mode we have read access to all locations unless restricted,
@@ -934,18 +957,20 @@ _FX ULONG Process_MatchPathEx(
 
         mp_flags = TRUE_PATH_READ_FLAG | COPY_PATH_OPEN_FLAG; // normal mode
     }
-    else {
-
-        //
-        // in privacy mode we only have read access to selected generic locations,
-        // and read access to user data must be explicityl grated,
-        // also all writes are redirected to the sandbox
-        //
-        // To enable privacy enchanced mode add UsePrivacyMode=y 
-        //
-
-        mp_flags = TRUE_PATH_CLOSED_FLAG | COPY_PATH_OPEN_FLAG; // write path mode
-    }
+    //else {
+    //
+    //    //
+    //    // in privacy mode we only have read access to selected generic locations,
+    //    // and read access to user data must be explicityl grated,
+    //    // also all writes are redirected to the sandbox
+    //    //
+    //    // Note: as of 5.60.1 all locations are locked down explicitly while the root mode remains normal
+    //    //
+    //    // To enable privacy enchanced mode add UsePrivacyMode=y 
+    //    //
+    //
+    //    mp_flags = TRUE_PATH_CLOSED_FLAG | COPY_PATH_OPEN_FLAG; // write path mode
+    //}
 
     //
     // closed path list, in non specific mode has the higher priority
