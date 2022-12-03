@@ -160,19 +160,24 @@ void CSbieView::CreateMenu()
 		}
 		else
 			m_pMenuRunStart = NULL;
-		m_pMenuRunBrowser = m_pMenuRun->addAction(CSandMan::GetIcon("Internet"), tr("Default Web Browser"), this, SLOT(OnSandBoxAction()));
-		m_pMenuRunMailer = m_pMenuRun->addAction(CSandMan::GetIcon("Email"), tr("Default eMail Client"), this, SLOT(OnSandBoxAction()));
-		m_pMenuRunCmd = m_pMenuRun->addAction(CSandMan::GetIcon("Cmd"), tr("Command Prompt"), this, SLOT(OnSandBoxAction()));
-		m_pMenuRunTools = m_pMenuRun->addMenu(CSandMan::GetIcon("Maintenance"), tr("Boxed Tools"));
-			m_pMenuRunCmdAdmin = m_pMenuRunTools->addAction(CSandMan::GetIcon("Cmd"), tr("Command Prompt (as Admin)"), this, SLOT(OnSandBoxAction()));
-#ifndef _WIN64
-			if(CSbieAPI::IsWow64())
-#endif
-				m_pMenuRunCmd32 = m_pMenuRunTools->addAction(CSandMan::GetIcon("Cmd"), tr("Command Prompt (32-bit)"), this, SLOT(OnSandBoxAction()));
+		m_pMenuRunTools = m_pMenuRun->addMenu(CSandMan::GetIcon("Maintenance"), tr("More Tools"));
+			m_pMenuRunBrowser = m_pMenuRunTools->addAction(CSandMan::GetIcon("Internet"), tr("Default Web Browser"), this, SLOT(OnSandBoxAction()));
+			m_pMenuRunMailer = m_pMenuRunTools->addAction(CSandMan::GetIcon("Email"), tr("Default eMail Client"), this, SLOT(OnSandBoxAction()));
+
 			m_pMenuRunExplorer = m_pMenuRunTools->addAction(CSandMan::GetIcon("Explore"), tr("Windows Explorer"), this, SLOT(OnSandBoxAction()));
 			m_pMenuRunRegEdit = m_pMenuRunTools->addAction(CSandMan::GetIcon("RegEdit"), tr("Registry Editor"), this, SLOT(OnSandBoxAction()));
 			m_pMenuRunAppWiz = m_pMenuRunTools->addAction(CSandMan::GetIcon("Software"), tr("Programs and Features"), this, SLOT(OnSandBoxAction()));
+			
+			m_pMenuRunTools->addSeparator();
+			m_pMenuRunCmd = m_pMenuRunTools->addAction(CSandMan::GetIcon("Cmd"), tr("Command Prompt"), this, SLOT(OnSandBoxAction()));
+			m_pMenuRunCmdAdmin = m_pMenuRunTools->addAction(CSandMan::GetIcon("Cmd"), tr("Command Prompt (as Admin)"), this, SLOT(OnSandBoxAction()));
+#ifdef _WIN64
+			if(CSbieAPI::IsWow64())
+				m_pMenuRunCmd32 = m_pMenuRunTools->addAction(CSandMan::GetIcon("Cmd"), tr("Command Prompt (32-bit)"), this, SLOT(OnSandBoxAction()));
+#endif
+			m_pMenuRunTools->addSeparator();
 			m_pMenuAutoRun = m_pMenuRunTools->addAction(CSandMan::GetIcon("ReloadIni"), tr("Execute Autorun Entries"), this, SLOT(OnSandBoxAction()));
+
 		m_pMenuRun->addSeparator();
 		m_iMenuRun = m_pMenuRun->actions().count();
 	m_pMenuEmptyBox = m_pMenuBox->addAction(CSandMan::GetIcon("EmptyAll"), tr("Terminate All Programs"), this, SLOT(OnSandBoxAction()));
@@ -284,7 +289,9 @@ void CSbieView::CreateOldMenu()
 		m_pMenuRunCmd = NULL;
 		m_pMenuRunTools = NULL;
 			m_pMenuRunCmdAdmin = NULL;
+#ifdef _WIN64
 			m_pMenuRunCmd32 = NULL;
+#endif
 			m_pMenuRunRegEdit = NULL;
 			m_pMenuRunAppWiz = NULL;
 			m_pMenuAutoRun = NULL;
@@ -1074,29 +1081,31 @@ void CSbieView::OnSandBoxAction(QAction* Action, const QList<CSandBoxPtr>& SandB
 		Results.append(SandBoxes.first()->RunStart("cmd.exe"));
 	else if (Action == m_pMenuRunCmdAdmin)
 		Results.append(SandBoxes.first()->RunStart("cmd.exe", true));
+#ifdef _WIN64
 	else if (Action == m_pMenuRunCmd32)
 		Results.append(SandBoxes.first()->RunStart("C:\\WINDOWS\\SysWOW64\\cmd.exe"));
+#endif
 	else if (Action == m_pMenuPresetsShowUAC)
 	{
-		SandBoxes.first()->SetBool("DropAdminRights", false);
-		SandBoxes.first()->SetBool("FakeAdminRights", false);
+		SandBoxes.first()->SetBoolSafe("DropAdminRights", false);
+		SandBoxes.first()->SetBoolSafe("FakeAdminRights", false);
 	}
 	else if (Action == m_pMenuPresetsNoAdmin)
 	{
-		SandBoxes.first()->SetBool("DropAdminRights", true);
-		SandBoxes.first()->SetBool("FakeAdminRights", false);
+		SandBoxes.first()->SetBoolSafe("DropAdminRights", true);
+		SandBoxes.first()->SetBoolSafe("FakeAdminRights", false);
 	}
 	else if (Action == m_pMenuPresetsFakeAdmin)
 	{
-		SandBoxes.first()->SetBool("DropAdminRights", true);
-		SandBoxes.first()->SetBool("FakeAdminRights", true);
+		SandBoxes.first()->SetBoolSafe("DropAdminRights", true);
+		SandBoxes.first()->SetBoolSafe("FakeAdminRights", true);
 	}
 	else if (Action == m_pMenuPresetsINet)
 		SandBoxes.first().objectCast<CSandBoxPlus>()->SetINetBlock(m_pMenuPresetsINet->isChecked());
 	else if (Action == m_pMenuPresetsShares)
 		SandBoxes.first().objectCast<CSandBoxPlus>()->SetAllowShares(m_pMenuPresetsShares->isChecked());
 	else if (Action == m_pMenuPresetsRecovery)
-		m_pMenuPresetsRecovery->setChecked(SandBoxes.first()->SetBool("AutoRecover", m_pMenuPresetsRecovery->isChecked()));
+		m_pMenuPresetsRecovery->setChecked(SandBoxes.first()->SetBoolSafe("AutoRecover", m_pMenuPresetsRecovery->isChecked()));
 	else if (Action == m_pMenuOptions)
 		ShowOptions(SandBoxes.first());
 	else if (Action == m_pMenuBrowse)
